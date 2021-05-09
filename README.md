@@ -2,6 +2,10 @@
 <p>
 <img src="https://raw.githubusercontent.com/alicemalturan/laravel_realtimechat/main/ss1.png">
 </p>
+<p>
+<img src="https://raw.githubusercontent.com/alicemalturan/laravel_realtimechat/main/ss2.png">
+</p>
+
 <p align="center">
 <a href="https://travis-ci.org/laravel/framework"><img src="https://travis-ci.org/laravel/framework.svg" alt="Build Status"></a>
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>

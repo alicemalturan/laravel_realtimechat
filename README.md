@@ -1,26 +1,36 @@
-# Laravel Realtime Chat
+# Laravel Realtime Chat (Modernized)
 
-Modernized realtime chat baseline with:
+This branch modernizes the app toward a **Laravel 11 + Reverb + Vue + Tailwind** stack.
 
-- Auth flow (register/login/logout)
-- Multi-room messaging
-- Typing indicators
-- Presence heartbeat (online users)
-- Read receipts (sent/delivered/seen)
-- Emoji reactions
-- File/image attachments
-- Cursor pagination + infinite scroll
-- Optimistic UI and skeleton loaders
+## What's improved
 
-## Run locally
+- ✅ Vue 3-based animated chat UI (rooms sidebar, smooth message transitions, sticky composer).
+- ✅ Realtime features: typing, presence heartbeat, reactions, read receipts, optimistic updates.
+- ✅ Security hardening: strict input validation, message sanitization, upload filename hardening, security headers middleware, and route throttling.
+- ✅ Backend design for multi-room/private chat with indexed tables and cursor pagination.
+- ✅ Build stack migration plan from Mix to Vite + Vue.
+
+## Target stack
+
+- **Backend:** Laravel 11
+- **Realtime:** Laravel Reverb (Pusher protocol compatible)
+- **Frontend:** Vue 3
+- **Styling:** Tailwind CSS
+- **Uploads:** S3/compatible object store (local disk supported)
+- **Performance:** Octane + Redis queues + indexed queries
+
+## Local setup
 
 ```bash
 cp .env.example .env
+composer install
 php artisan key:generate
 php artisan migrate
+npm install
+npm run dev
 php artisan serve
 ```
 
-If using websockets, configure Pusher-compatible settings (Reverb or Soketi) in `.env`.
+Configure Reverb/Pusher-compatible environment variables before running realtime events.
 
-See `docs/modern-chat-architecture.md` for stack/deployment decisions.
+For detailed architecture and deployment notes, see `docs/modern-chat-architecture.md`.

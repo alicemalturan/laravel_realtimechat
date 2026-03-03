@@ -2,7 +2,6 @@
 
 namespace App\Events;
 
-use App\Models\Message;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -15,18 +14,10 @@ class MessageSent implements ShouldBroadcast
     public int $roomId;
     public array $message;
 
-    public function __construct(int $roomId, Message $message)
+    public function __construct(int $roomId, array $message)
     {
         $this->roomId = $roomId;
-        $this->message = [
-            'id' => $message->id,
-            'body' => $message->body,
-            'meta' => $message->meta,
-            'created_at' => optional($message->created_at)->toIso8601String(),
-            'user' => ['id' => $message->user->id, 'username' => $message->user->username],
-            'reactions' => [],
-            'read_status' => 'sent',
-        ];
+        $this->message = $message;
     }
 
     public function broadcastOn()

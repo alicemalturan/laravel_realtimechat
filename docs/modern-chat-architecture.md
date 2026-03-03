@@ -1,43 +1,48 @@
-# Modern Realtime Chat Stack (Laravel)
+# Modern Realtime Chat Architecture
 
-## Stack Decision
+## 1) Stack selection
 
-- **Backend:** Laravel 11 target (this repository currently demonstrates the architecture on Laravel 8 codebase).
-- **Realtime transport:** **Laravel Reverb** (primary) or **Soketi** (drop-in Pusher protocol alternative).
-- **Frontend:** Vue 3 + Inertia or React + Inertia; this implementation uses Blade + Alpine for lightweight migration.
-- **UI system:** Tailwind CSS + Headless UI patterns.
-- **Media:** S3-compatible object storage with signed URLs; local disk used in this demo.
-- **Performance:** Redis queues + Horizon, Octane (Swoole/RoadRunner), DB indexing and cursor pagination.
-- **Deployment:** Forge (VM) or Vapor (serverless), TLS everywhere, WSS-only in production.
+- **Laravel 11** for backend/API/auth foundation.
+- **Laravel Reverb** as first-choice websocket server (Soketi as compatible alternative).
+- **Vue 3 + Tailwind CSS** for responsive and animated UI.
+- **Redis + Queues + Octane** for low-latency production performance.
 
-## Implemented in this repository
+## 2) UI/UX modernization delivered
 
-- Multi-room chat schema (`chat_rooms`, `chat_room_user`, `messages`, `message_reactions`, `message_read_receipts`).
-- Cursor-based message pagination and infinite scroll endpoint.
-- Typing indicator events with debounce-friendly endpoint.
-- Presence heartbeat endpoint for online/offline state.
-- Read receipts with delivered/seen timestamps.
-- Emoji reactions per message.
-- Attachment upload endpoint (image/document).
-- Optimistic message rendering in UI.
-- Skeleton loading state in UI.
+- Vue-driven chat screen with animated message transitions.
+- Scrollable timeline + sticky message input + room sidebar.
+- Skeleton loaders for initial loading.
+- Cursor-based pagination for infinite scroll.
+- Optimistic message rendering for instant perceived performance.
 
-## Reverb/Soketi setup notes
+## 3) Security updates delivered
 
-1. For **Laravel 11 + Reverb**:
-   - Install: `composer require laravel/reverb`
-   - Publish config and set `BROADCAST_CONNECTION=reverb`.
-   - Route auth via `/broadcasting/auth` and private channels `chat.room.{id}`.
-2. For **Soketi**:
-   - Keep `BROADCAST_CONNECTION=pusher`.
-   - Point `PUSHER_HOST`, `PUSHER_PORT`, `PUSHER_SCHEME` to Soketi.
-3. Enforce WSS in production and disable plaintext WS outside local dev.
+- Input validation tightened for auth and chat payloads.
+- Message body sanitized via `strip_tags` before persistence.
+- Upload filename hardening for attachments.
+- Security response headers middleware (`X-Frame-Options`, `X-Content-Type-Options`, HSTS on HTTPS, etc.).
+- Dedicated per-feature throttles (`chat-send`, `chat-typing`, `chat-presence`).
 
-## Security & scale checklist
+## 4) Realtime collaboration features
 
-- Add per-user send throttles via `RateLimiter` (messages/minute).
-- Encrypt sensitive payloads (application-level encryption for private rooms).
-- Queue heavy tasks: notifications, previews, virus scans.
-- Add compound indexes for unread scans and room timelines (already included in migrations).
-- Move uploads to S3 and serve via CloudFront.
+- Presence heartbeat (`online/offline` ready hooks).
+- Typing indicator endpoint + broadcast event.
+- Read receipts (`sent`, `delivered`, `seen`).
+- Emoji reactions.
 
+## 5) Database model and indexes
+
+- `chat_rooms`
+- `chat_room_user`
+- `messages`
+- `message_reactions`
+- `message_read_receipts`
+
+Indexes cover room timelines, unread scans, and reaction lookup to support scale.
+
+## 6) Deployment recommendations
+
+- Use **Forge** for VM deployment or **Vapor** for serverless.
+- Enforce TLS and WSS only in production.
+- Store attachments on S3 and serve via CDN.
+- Run queue workers for non-blocking notifications and heavy tasks.

@@ -11,6 +11,7 @@ use App\Models\ChatRoom;
 use App\Models\Message;
 use App\Models\MessageReaction;
 use App\Models\MessageReadReceipt;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -23,7 +24,7 @@ class ChatController extends Controller
         $user = $request->user();
 
         $rooms = ChatRoom::withCount('users')
-            ->whereHas('users', fn ($q) => $q->where('users.id', $user->id))
+            ->whereHas('users', fn ($query) => $query->where('users.id', $user->id))
             ->orderBy('name')
             ->get();
 
@@ -35,41 +36,32 @@ class ChatController extends Controller
                 'created_by' => $user->id,
             ]);
             $room->users()->attach($user->id, ['last_seen_at' => now()]);
-            $rooms = collect([$room]);
+            $rooms = collect([$room->loadCount('users')]);
         }
 
         return view('chat.index', [
             'rooms' => $rooms,
             'activeRoomId' => (int) ($request->query('room') ?: $rooms->first()->id),
+            'me' => $user->only(['id', 'username']),
         ]);
     }
 
-    public function listMessages(Request $request, ChatRoom $room)
+    public function listMessages(Request $request, ChatRoom $room): JsonResponse
     {
-        abort_unless($room->users()->where('user_id', $request->user()->id)->exists(), 403);
+        abort_unless($this->isRoomMember($request, $room), 403);
 
         $messages = Message::with(['user:id,username', 'reactions:user_id,message_id,emoji'])
             ->where('chat_room_id', $room->id)
             ->latest('id')
             ->cursorPaginate(20)
-            ->through(function (Message $message) use ($request) {
-                return [
-                    'id' => $message->id,
-                    'body' => $message->body,
-                    'user' => $message->user,
-                    'meta' => $message->meta,
-                    'created_at' => $message->created_at?->toIso8601String(),
-                    'read_status' => $this->statusForMessage($message, $request->user()->id),
-                    'reactions' => $message->reactions->groupBy('emoji')->map->count(),
-                ];
-            });
+            ->through(fn (Message $message) => $this->toMessagePayload($message, (int) $request->user()->id));
 
         return response()->json($messages);
     }
 
-    public function sendMessage(Request $request, ChatRoom $room)
+    public function sendMessage(Request $request, ChatRoom $room): JsonResponse
     {
-        abort_unless($room->users()->where('user_id', $request->user()->id)->exists(), 403);
+        abort_unless($this->isRoomMember($request, $room), 403);
 
         $payload = $request->validate([
             'body' => ['nullable', 'string', 'max:4000'],
@@ -83,9 +75,10 @@ class ChatController extends Controller
         $meta = [];
         if ($request->hasFile('attachment')) {
             $file = $request->file('attachment');
-            $path = $file->store('chat-uploads', 'public');
+            $safeName = preg_replace('/[^a-zA-Z0-9\._-]/', '_', $file->getClientOriginalName());
+            $path = $file->storeAs('chat-uploads', now()->format('Y/m') . '/' . Str::uuid() . '-' . $safeName, 'public');
             $meta['attachment'] = [
-                'name' => $file->getClientOriginalName(),
+                'name' => Str::limit($safeName, 120),
                 'url' => Storage::disk('public')->url($path),
                 'mime' => $file->getMimeType(),
             ];
@@ -94,32 +87,33 @@ class ChatController extends Controller
         $message = Message::create([
             'chat_room_id' => $room->id,
             'user_id' => $request->user()->id,
-            'body' => $payload['body'] ?? null,
+            'body' => strip_tags($payload['body'] ?? ''),
             'meta' => $meta,
             'delivered_at' => now(),
         ]);
 
-        $message->load('user:id,username');
+        $message->load('user:id,username', 'reactions:user_id,message_id,emoji');
+        $serialized = $this->toMessagePayload($message, (int) $request->user()->id);
 
-        broadcast(new MessageSent($room->id, $message))->toOthers();
+        broadcast(new MessageSent($room->id, $serialized))->toOthers();
 
-        return response()->json(['message' => $message]);
+        return response()->json(['message' => $serialized]);
     }
 
     public function typing(Request $request, ChatRoom $room)
     {
-        abort_unless($room->users()->where('user_id', $request->user()->id)->exists(), 403);
+        abort_unless($this->isRoomMember($request, $room), 403);
 
         $request->validate(['typing' => ['required', 'boolean']]);
 
-        broadcast(new TypingStatusUpdated($room->id, $request->user(), (bool) $request->boolean('typing')))->toOthers();
+        broadcast(new TypingStatusUpdated($room->id, $request->user(), $request->boolean('typing')))->toOthers();
 
         return response()->noContent();
     }
 
-    public function presence(Request $request, ChatRoom $room)
+    public function presence(Request $request, ChatRoom $room): JsonResponse
     {
-        abort_unless($room->users()->where('user_id', $request->user()->id)->exists(), 403);
+        abort_unless($this->isRoomMember($request, $room), 403);
 
         $room->users()->updateExistingPivot($request->user()->id, ['last_seen_at' => now()]);
         broadcast(new PresenceUpdated($room->id, $request->user(), true))->toOthers();
@@ -129,9 +123,9 @@ class ChatController extends Controller
 
     public function addReaction(Request $request, Message $message)
     {
-        abort_unless($message->room->users()->where('user_id', $request->user()->id)->exists(), 403);
+        abort_unless($this->isRoomMember($request, $message->room), 403);
 
-        $payload = $request->validate(['emoji' => ['required', 'string', 'max:16']]);
+        $payload = $request->validate(['emoji' => ['required', 'string', 'max:16', 'regex:/^\X+$/u']]);
 
         MessageReaction::firstOrCreate([
             'message_id' => $message->id,
@@ -146,7 +140,7 @@ class ChatController extends Controller
 
     public function markAsRead(Request $request, Message $message)
     {
-        abort_unless($message->room->users()->where('user_id', $request->user()->id)->exists(), 403);
+        abort_unless($this->isRoomMember($request, $message->room), 403);
 
         MessageReadReceipt::updateOrCreate(
             ['message_id' => $message->id, 'user_id' => $request->user()->id],
@@ -168,7 +162,7 @@ class ChatController extends Controller
 
         $room = DB::transaction(function () use ($data, $request) {
             $room = ChatRoom::create([
-                'name' => $data['name'],
+                'name' => strip_tags($data['name']),
                 'slug' => Str::slug($data['name']) . '-' . Str::random(6),
                 'type' => $data['type'],
                 'created_by' => $request->user()->id,
@@ -193,5 +187,23 @@ class ChatController extends Controller
         }
 
         return $message->user_id === $userId ? 'sent' : 'delivered';
+    }
+
+    private function isRoomMember(Request $request, ChatRoom $room): bool
+    {
+        return $room->users()->where('users.id', $request->user()->id)->exists();
+    }
+
+    private function toMessagePayload(Message $message, int $viewerId): array
+    {
+        return [
+            'id' => $message->id,
+            'body' => $message->body,
+            'user' => $message->user,
+            'meta' => $message->meta,
+            'created_at' => $message->created_at?->toIso8601String(),
+            'read_status' => $this->statusForMessage($message, $viewerId),
+            'reactions' => $message->reactions->groupBy('emoji')->map->count(),
+        ];
     }
 }
